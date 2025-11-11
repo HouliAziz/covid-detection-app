@@ -5,17 +5,22 @@ import numpy as np
 import h5py
 import json
 import os
+import gdown
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 
+# ---------------------------------------------------------------------
 # Page config
+# ---------------------------------------------------------------------
 st.set_page_config(
     page_title="COVID-19 Detection System",
-    page_icon="hospital",
+    page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# ---------------------------------------------------------------------
 # Custom CSS
+# ---------------------------------------------------------------------
 st.markdown("""
     <style>
     .main-header {font-size: 3rem; color: #1f77b4; text-align: center; margin-bottom: 2rem;}
@@ -29,8 +34,34 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ---------------------------------------------------------------------
+# Model download configuration
+# ---------------------------------------------------------------------
+MODEL_DIR = "models"
+MODEL_PATH = os.path.join(MODEL_DIR, "covid_model.h5")
+FILE_ID = "19xovMnct7v1KRB9jS7eFjg4WgWQ8RCay"
+DOWNLOAD_URL = f"https://drive.google.com/uc?id={FILE_ID}"
+
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+# Download model if not available locally
+if not os.path.exists(MODEL_PATH):
+    with st.spinner("Downloading model (~400 MB)... please wait ⏳"):
+        try:
+            gdown.download(DOWNLOAD_URL, MODEL_PATH, quiet=False)
+            st.success("Model downloaded successfully ✅")
+        except Exception as e:
+            st.error(f"❌ Failed to download model: {e}")
+            st.stop()
+
+# ---------------------------------------------------------------------
 # Class order
+# ---------------------------------------------------------------------
 CLASS_NAMES = ['COVID', 'Lung_Opacity', 'Normal', 'Viral Pneumonia']
+
+# ---------------------------------------------------------------------
+# Load model + processor
+# ---------------------------------------------------------------------
 
 
 @st.cache_resource
@@ -43,7 +74,7 @@ def load_model_and_processor():
             num_labels=4,
             ignore_mismatched_sizes=True
         )
-        with h5py.File("model/covid_model.h5", 'r') as f:
+        with h5py.File(MODEL_PATH, 'r') as f:
             state_dict = {k: torch.tensor(v[:])
                           for k, v in f['state_dict'].items()}
             model.load_state_dict(state_dict)
@@ -52,14 +83,16 @@ def load_model_and_processor():
             model.config.id2label = {int(k): v for k, v in id2label.items()}
             model.config.label2id = label2id
         model.eval()
-        st.success("Model loaded successfully!")
+        st.success("✅ Model loaded successfully!")
         return model, processor
     except Exception as e:
         st.error(f"Error loading model: {e}")
-        st.info("Make sure model/covid_model.h5 exists")
+        st.info(f"Make sure {MODEL_PATH} exists and is valid.")
         return None, None
 
-# FIXED INDENTATION HERE
+# ---------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------
 
 
 def apply_mask(image_pil, mask_pil=None):
@@ -84,8 +117,14 @@ def predict_image(image_pil, mask_pil, model, processor):
     return probs.cpu().numpy()[0], masked_img
 
 
-# Load model
+# ---------------------------------------------------------------------
+# Load model once
+# ---------------------------------------------------------------------
 model, processor = load_model_and_processor()
+
+# ---------------------------------------------------------------------
+# Streamlit main app
+# ---------------------------------------------------------------------
 
 
 def main():
@@ -95,19 +134,19 @@ def main():
 
     with st.sidebar:
         st.header("About")
-        st.info("Vision Transformer (ViT) + Lung masks\nTrained on 21k+ X-rays")
+        st.info("Vision Transformer (ViT) + Lung masks\nTrained on 21 k+ X-rays")
         st.header("Warning")
         st.warning("Educational use only")
         st.header("Model")
-        st.write("• ViT-Base\n• 92.2% accuracy\n• Uses lung masks")
+        st.write("• ViT-Base\n• 92.2 % accuracy\n• Uses lung masks")
 
     col1, col2 = st.columns([1, 1])
 
     with col1:
         st.subheader("Upload X-Ray")
         uploaded_img = st.file_uploader("Image", type=['png', 'jpg', 'jpeg'])
-        uploaded_mask = st.file_uploader("Lung mask (optional)", type=[
-                                         'png', 'jpg', 'jpeg'], key="mask")
+        uploaded_mask = st.file_uploader("Lung mask (optional)",
+                                         type=['png', 'jpg', 'jpeg'], key="mask")
         if uploaded_img:
             image = Image.open(uploaded_img)
             st.image(image, caption="Original X-ray", use_column_width=True)
@@ -127,12 +166,9 @@ def main():
 
                 color = {'COVID': 'covid', 'Normal': 'normal',
                          'Viral Pneumonia': 'viral-pneumonia', 'Lung_Opacity': 'lung-opacity'}[pred_class]
-                emoji = {'COVID': 'virus', 'Normal': 'check mark',
-                         'Viral Pneumonia': 'lungs', 'Lung_Opacity': 'magnifying glass'}[pred_class]
-
                 st.markdown(f"""
                     <div class="prediction-box {color}">
-                        <h2>{emoji} {pred_class}</h2>
+                        <h2>{pred_class}</h2>
                         <p><strong>Confidence: {confidence:.2f}%</strong></p>
                     </div>
                 """, unsafe_allow_html=True)
@@ -166,7 +202,7 @@ def main():
             st.info("Upload an X-ray image to start")
 
     st.markdown("---")
-    st.markdown("<p style='text-align: center; color: gray;'>Made with Streamlit + PyTorch ViT | Educational Only</p>",
+    st.markdown("<p style='text-align:center;color:gray;'>Made with Streamlit + PyTorch ViT | Educational Only</p>",
                 unsafe_allow_html=True)
 
 
